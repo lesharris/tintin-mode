@@ -1,0 +1,164 @@
+#+TITLE: tintin-mode
+#+AUTHOR: Les Harris
+#+EMAIL: les@lesharris.com
+
+* tintin-mode
+
+A modern Emacs major mode for editing [[https://tintin.mudhalla.net/][TinTin++]] configuration files.
+
+TinTin++ is a terminal-based MUD client that uses scripting files with =.tin= and =.tt= extensions. This mode provides comprehensive syntax highlighting, indentation, and editing support for TinTin++ scripts.
+
+** Features
+
+- *Syntax highlighting* for TinTin++ commands, variables, functions, strings, and comments
+- *Theme-aware* - inherits colors from your Emacs theme instead of hardcoded colors
+- *Command completion* - tab completion for TinTin++ commands (type =#ac= + =TAB= ? =#action=)
+- *Smart indentation* - automatic indentation with customizable offset
+- *Code navigation* - Imenu integration for jumping to functions and variables
+- *Code folding* - outline mode support for collapsing sections
+- *Function context* - which-function-mode shows current function in mode line
+- *Electric pairs* - automatic brace and parenthesis pairing
+- *Robust font-lock* - handles complex variable syntax like =*GMCP_PACKAGES[%*]=
+
+** Installation
+
+*** MELPA
+
+The recommended way to install =tintin-mode= is through MELPA:
+
+#+BEGIN_SRC emacs-lisp
+M-x package-install RET tintin-mode RET
+#+END_SRC
+
+*** Manual Installation
+
+1. Download =tintin-mode.el=
+2. Place it in your =load-path=
+3. Add to your Emacs configuration:
+
+#+BEGIN_SRC emacs-lisp
+(require 'tintin-mode)
+#+END_SRC
+
+** Usage
+
+=tintin-mode= automatically activates for files with =.tin= and =.tt= extensions.
+
+*** Example TinTin++ Code
+
+#+BEGIN_SRC tintin
+#nop This is a comment
+#variable {hp} {100}
+#variable {max_hp} {150}
+
+#action {%0 tells you '%1'} {
+    #if {"%1" == "hello"} {
+        tell %0 Hello there!
+    }
+}
+
+#function {heal} {
+    #if {$hp < 50} {
+        cast heal;
+        #showme {Healing - HP: $hp/$max_hp}
+    }
+}
+
+#foreach {*GMCP_PACKAGES[%*]} {package} {
+    #if {$GMCP_PACKAGES[$package]} {
+        #showme {Package $package is enabled}
+    }
+}
+#+END_SRC
+
+*** Key Bindings
+
+| Key         | Function                    |
+|-------------+-----------------------------|
+| =C-c C-c=   | Comment region              |
+| =C-c C-u=   | Uncomment region            |
+| =C-c C-f=   | Jump to function/variable   |
+| =C-c C-o=   | Toggle code folding         |
+| =C-j=       | Newline and indent          |
+
+** Configuration
+
+*** Indentation
+
+Customize the indentation offset:
+
+#+BEGIN_SRC emacs-lisp
+(setq tintin-indent-offset 4) ; Default is 2
+#+END_SRC
+
+*** Faces
+
+All faces inherit from standard font-lock faces and automatically adapt to your theme. You can customize individual faces:
+
+#+BEGIN_SRC emacs-lisp
+;; Customize variable highlighting
+(set-face-attribute 'tintin-var-face nil :foreground "yellow" :weight 'bold)
+#+END_SRC
+
+Available faces:
+- =tintin-var-face= - Variables (=%var=, =$var=, =*var=)
+- =tintin-var-def-face= - Variable definitions (=#variable=)
+- =tintin-function-face= - Function calls (=@function=)
+- =tintin-function-def-face= - Function definitions (=#function=)
+- =tintin-conditional-face= - Conditionals and loops (=#if=, =#loop=, etc.)
+- =tintin-comment-face= - Comments (=#nop=)
+- =tintin-hash-face= - TinTin++ commands (=#action=, =#alias=, etc.)
+- =tintin-ansi-face= - ANSI color codes (=<123>=)
+- =tintin-symbol-face= - Brackets and operators
+
+*** Hooks
+
+#+BEGIN_SRC emacs-lisp
+(add-hook 'tintin-mode-hook
+          (lambda ()
+            ;; Enable line numbers
+            (display-line-numbers-mode 1)
+            ;; Enable which-function-mode
+            (which-function-mode 1)))
+#+END_SRC
+
+** Supported TinTin++ Features
+
+- *Commands* - All major TinTin++ commands with completion
+- *Variables* - =%var=, =$var=, =*var= with array syntax =[index]=
+- *Functions* - User-defined functions with =@function{args}= calls
+- *Conditionals* - =#if=, =#else=, =#elseif=, =#loop=, =#while=, =#foreach=
+- *Comments* - =#nop=, =#no= comments
+- *Strings* - Double and single quoted strings
+- *ANSI Colors* - =<color_code>= highlighting
+
+** Differences from Original Mode
+
+This mode replaces the outdated =tintin-mode= linked from the TinTin++ website. Key improvements:
+
+- *Modern Emacs integration* - uses =define-derived-mode= and inherits from =prog-mode=
+- *Theme compatibility* - respects your color scheme instead of hardcoded colors
+- *Robust font-lock* - doesn't break on complex syntax or when scrolling
+- *Enhanced features* - completion, navigation, folding, and indentation
+- *Better regex patterns* - handles complex variable syntax and nested structures
+- *Active maintenance* - built with modern Emacs best practices
+
+** Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Submit a pull request
+
+Report bugs or request features through the issue tracker.
+
+** License
+
+GPL-3.0 or later. See LICENSE file for details.
+
+** Related Links
+
+- [[https://tintin.mudhalla.net/][TinTin++ Official Site]]
+- [[https://tintin.mudhalla.net/manual/][TinTin++ Manual]]
+- [[https://github.com/scandum/tintin][TinTin++ Source Code]]
