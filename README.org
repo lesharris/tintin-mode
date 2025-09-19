@@ -2,8 +2,6 @@
 #+AUTHOR: Les Harris
 #+EMAIL: les@lesharris.com
 
-* tintin-mode
-
 A modern Emacs major mode for editing [[https://tintin.mudhalla.net/][TinTin++]] configuration files.
 
 TinTin++ is a terminal-based MUD client that uses scripting files with =.tin= and =.tt= extensions. This mode provides comprehensive syntax highlighting, indentation, and editing support for TinTin++ scripts.
