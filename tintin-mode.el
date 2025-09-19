@@ -334,7 +334,7 @@
 
   ;; Outline mode support
   (setq-local outline-regexp "#\\(function\\|session\\|if\\|loop\\|while\\|foreach\\)")
-  (setq-local outline-level 'tintin-outline-level)
+  (setq-local outline-level #'tintin-outline-level)
 
   ;; Which-function-mode support
   (setq-local which-func-functions '(tintin-which-function))
