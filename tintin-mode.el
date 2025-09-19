@@ -4,7 +4,7 @@
 
 ;; Author: Les Harris <les@lesharris.com>
 ;; Version: 0.1
-;; URL: https://github.com/tintin-mode
+;; URL: https://github.com/lesharris/tintin-mode
 ;; Package-Requires: ((emacs "24.3"))
 
 ;; This file is not part of GNU Emacs.
@@ -323,14 +323,14 @@
   (setq-local font-lock-defaults '(tintin-font-lock-keywords nil nil))
 
   ;; Indentation
-  (setq-local indent-line-function 'tintin-indent-line)
+  (setq-local indent-line-function #'tintin-indent-line)
   (setq-local tab-width tintin-indent-offset)
 
   ;; Imenu
-  (setq-local imenu-create-index-function 'tintin-imenu-create-index)
+  (setq-local imenu-create-index-function #'tintin-imenu-create-index)
 
   ;; Completion
-  (add-hook 'completion-at-point-functions 'tintin-completion-at-point nil t)
+  (add-hook 'completion-at-point-functions #'tintin-completion-at-point nil t)
 
   ;; Outline mode support
   (setq-local outline-regexp "#\\(function\\|session\\|if\\|loop\\|while\\|foreach\\)")
