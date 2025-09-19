@@ -189,8 +189,9 @@
     (,(rx "@" (group (one-or-more (or alnum "_"))))
      (1 'tintin-function-face))
 
-    ;; Variables with array syntax: *VAR[index], $VAR[index], %VAR[index]
-    (,(rx (or "*" "%" "$")
+    ;; Variables with array syntax
+    ;; *VAR[index], $VAR[index], %VAR[index], &VAR[index]
+    (,(rx (or "*" "%" "$" "&")
           (group (one-or-more (or alnum "_"))
                  (* "[" (*? (not (any "]\n"))) "]")))
      (1 'tintin-var-face))
