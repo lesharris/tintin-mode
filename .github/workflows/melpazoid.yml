@@ -4,7 +4,14 @@
 # to .github/workflows/melpazoid.yml and modifying RECIPE and EXIST_OK below.
 
 name: melpazoid
-on: [push, pull_request]
+on:
+  push:
+    paths:
+      - 'tintin-mode.el'
+  pull_request:
+    paths:
+      - 'tintin-mode.el'
+  workflow_dispatch:  # Allows manual triggering
 
 jobs:
   build:
