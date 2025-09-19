@@ -196,7 +196,7 @@
                  (* "[" (*? (not (any "]\n"))) "]")))
      (1 'tintin-var-face))
 
-    ;; ANSI color codes - comprehensive TinTin++ color support
+    ;; ANSI color codes
     (,(rx "<" (group (or
                       ;; 24-bit truecolor: F000000-FFFFFFF, B000000-BFFFFFF
                       (seq (any "FB") (repeat 6 7 hex-digit))
