@@ -3,7 +3,7 @@
 ;; Copyright (C) 2025 Les Harris
 
 ;; Author: Les Harris <les@lesharris.com>
-;; Version: 0.1
+;; Version: 0.2
 ;; URL: https://github.com/lesharris/tintin-mode
 ;; Package-Requires: ((emacs "24.3"))
 
