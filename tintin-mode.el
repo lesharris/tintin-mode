@@ -3,7 +3,7 @@
 ;; Copyright (C) 2025 Les Harris
 
 ;; Author: Les Harris <les@lesharris.com>
-;; Version: 0.2
+;; Version: 0.3
 ;; URL: https://github.com/lesharris/tintin-mode
 ;; Package-Requires: ((emacs "24.3"))
 
@@ -41,13 +41,14 @@
 ;;   }
 ;;
 ;; Features:
+;; - Enhanced indentation that handles empty lines and nested blocks
+;; - Context-aware completion for commands, variables, and functions
+;; - Smart newline handling for brace pairs
 ;; - Syntax highlighting for TinTin++ commands, variables, and functions
-;; - Proper indentation with customizable offset
 ;; - Comment support (#nop commands)
 ;; - Imenu integration for navigation to functions and variables
 ;; - Electric pair insertion for braces and parentheses
 ;; - Outline mode support for code folding
-;; - Command completion for TinTin++ keywords
 ;; - Which-function-mode support
 
 ;;; Code:
@@ -68,7 +69,8 @@
 
 (defvar tintin-mode-map
   (let ((map (make-keymap)))
-    (define-key map "\C-j" 'newline-and-indent)
+    (define-key map (kbd "RET") 'tintin-newline-and-indent)
+    (define-key map "\C-j" 'tintin-newline-and-indent)
     (define-key map "\C-c\C-c" 'comment-region)
     (define-key map "\C-c\C-u" 'uncomment-region)
     (define-key map "\C-c\C-f" 'imenu) ; Quick function/variable navigation
@@ -151,15 +153,33 @@
     "zap")
   "List of TinTin++ commands for completion.")
 
+(defvar tintin-command-annotations
+  '(("action" . " trigger")
+    ("alias" . " shortcut")
+    ("variable" . " var")
+    ("var" . " var")
+    ("function" . " fn")
+    ("if" . " conditional")
+    ("loop" . " loop")
+    ("while" . " loop")
+    ("foreach" . " loop")
+    ("echo" . " output")
+    ("showme" . " output")
+    ("math" . " calc")
+    ("format" . " format")
+    ("replace" . " replace")
+    ("regexp" . " regex"))
+  "Annotations for TinTin++ commands shown in completion.")
+
 (defconst tintin-font-lock-keywords
   `(
-    ;; Comments - #nop, #no, etc. (keep this first)
+    ;; Comments
     (,(rx line-start (zero-or-more space)
           "#" (or "nop" "NOP" "no" "No" "NO")
           (zero-or-more nonl))
      . 'tintin-comment-face)
 
-    ;; Strings (single line only to prevent runaway matches)
+    ;; Strings (single line only)
     (,(rx "\"" (*? (not (any "\"\n"))) "\"")
      . 'font-lock-string-face)
     (,(rx "'" (*? (not (any "'\n"))) "'")
@@ -222,34 +242,105 @@
 
 (defvar tintin-mode-syntax-table
   (let ((st (make-syntax-table)))
-    (modify-syntax-entry ?_ "w" st)      ; underscore is part of words
-    (modify-syntax-entry ?\{ "(}" st)    ; brace pairs
+    (modify-syntax-entry ?_ "w" st)
+    (modify-syntax-entry ?\{ "(}" st)
     (modify-syntax-entry ?\} "){" st)
     st)
   "Syntax table for TinTin++ mode.")
 
+(defun tintin-in-string-or-comment-p (&optional pos)
+  "Return non-nil if POS (or point) is inside a string or comment."
+  (let ((pos (or pos (point))))
+    (let ((face (get-text-property pos 'face)))
+      (or (memq face '(font-lock-string-face
+                       font-lock-comment-face
+                       tintin-comment-face))
+          ;; Also check syntax-ppss for comments
+          (nth 4 (syntax-ppss pos))))))
+
+(defun tintin-calculate-indentation ()
+  "Calculate the indentation for the current line."
+  (save-excursion
+    (beginning-of-line)
+    (let ((cur-line (buffer-substring-no-properties
+                     (line-beginning-position)
+                     (line-end-position))))
+      (cond
+       ((bobp) 0)
+
+       ;; Closing brace - find its matching opening brace
+       ((string-match "^[ \t]*}" cur-line)
+        (save-excursion
+          (back-to-indentation)
+          (condition-case nil
+              (progn
+                (forward-char)
+                (backward-sexp)
+                (current-indentation))
+            (error 0))))
+
+       (t
+        (forward-line -1)
+        (while (and (not (bobp))
+                    (looking-at "^[ \t]*$"))
+          (forward-line -1))
+
+        (let ((prev-indent (current-indentation))
+              (line-start (line-beginning-position))
+              (line-end (line-end-position))
+              (net-braces 0))
+          (goto-char line-start)
+          (while (and (< (point) line-end)
+                      (re-search-forward "[{}]" line-end t))
+            (let ((brace-pos (1- (point)))
+                  (brace-char (char-before)))
+              (save-excursion
+                (unless (tintin-in-string-or-comment-p brace-pos)
+                  (if (eq brace-char ?{)
+                      (setq net-braces (1+ net-braces))
+                    (setq net-braces (1- net-braces)))))))
+
+          (max 0 (+ prev-indent (* net-braces tintin-indent-offset)))))))))
+
+(defun tintin-newline-and-indent ()
+  "Insert a newline and indent, handling brace pairs."
+  (interactive)
+  (let ((at-brace-pair (and (eq (char-before) ?{)
+                            (eq (char-after) ?}))))
+    (if at-brace-pair
+        (progn
+          (insert "\n")
+          (indent-according-to-mode)
+          (save-excursion
+            (forward-line 1)
+            (indent-according-to-mode)))
+      (insert "\n")
+      (indent-according-to-mode))))
+
 (defun tintin-indent-line ()
   "Indent current line as TinTin++ code."
   (interactive)
-  (let ((indent-col 0)
-        (cur-indent (current-indentation)))
-    (save-excursion
-      (beginning-of-line)
-      (when (not (bobp))
-        (forward-line -1)
-        (setq indent-col (current-indentation))
-        ;; Increase indent after opening braces or conditionals
-        (when (looking-at ".*{[^}]*$\\|.*#\\(if\\|else\\|loop\\|while\\|foreach\\)")
-          (setq indent-col (+ indent-col tintin-indent-offset)))
-        ;; Handle closing braces
-        (forward-line 1)
-        (when (looking-at "^[ \t]*}")
-          (setq indent-col (max 0 (- indent-col tintin-indent-offset))))))
+  (let* ((indent-col (tintin-calculate-indentation))
+         (cur-indent (current-indentation))
+         (pos (- (point-max) (point))))
 
     (unless (= cur-indent indent-col)
       (beginning-of-line)
       (delete-horizontal-space)
-      (indent-to indent-col))))
+      (indent-to indent-col)
+
+      (when (> (- (point-max) pos) (point))
+        (goto-char (- (point-max) pos))))))
+
+(defun tintin-indent-region (start end)
+  "Indent region from START to END."
+  (interactive "r")
+  (save-excursion
+    (goto-char start)
+    (while (< (point) end)
+      (unless (looking-at "^[ \t]*$")
+        (tintin-indent-line))
+      (forward-line 1))))
 
 (defun tintin-imenu-create-index ()
   "Create an imenu index for TinTin++ functions and variables."
@@ -257,7 +348,6 @@
         (variables '()))
     (save-excursion
       (goto-char (point-min))
-      ;; Find function definitions
       (while (re-search-forward
               (rx "#" (or "function" "FUNCTION") (one-or-more space)
                   (or (seq "{" (group (*? (not "}"))) "}")
@@ -268,7 +358,6 @@
             (push (cons name (match-beginning 0)) functions))))
 
       (goto-char (point-min))
-      ;; Find variable definitions
       (while (re-search-forward
               (rx "#" (or "var" "VAR" "variable" "VARIABLE") (one-or-more space)
                   (or (seq "{" (group (*? (not "}"))) "}")
@@ -282,11 +371,69 @@
             (when variables (list (cons "Variables" (nreverse variables)))))))
 
 (defun tintin-completion-at-point ()
-  "Provide completion for TinTin++ commands."
-  (when (looking-back "#\\([a-zA-Z]*\\)" (line-beginning-position))
+  "Provide completion for TinTin++ commands with metadata.
+Works with both Company and Corfu through `completion-at-point'."
+  (cond
+   ((looking-back "#\\([a-zA-Z]*\\)" (line-beginning-position))
     (let ((start (match-beginning 1))
           (end (match-end 1)))
-      (list start end tintin-commands))))
+      (list start end tintin-commands
+            :annotation-function #'tintin-annotate-command
+            :exclusive 'no)))
+
+   ((looking-back "[$%*&]\\([a-zA-Z_][a-zA-Z0-9_]*\\)?" (line-beginning-position))
+    (let ((start (match-beginning 1))
+          (end (match-end 1))
+          (vars (tintin-collect-variables)))
+      (when vars
+        (list start end vars
+              :annotation-function (lambda (_) " var")
+              :exclusive 'no))))
+
+   ((looking-back "@\\([a-zA-Z_][a-zA-Z0-9_]*\\)?" (line-beginning-position))
+    (let ((start (match-beginning 1))
+          (end (match-end 1))
+          (funcs (tintin-collect-functions)))
+      (when funcs
+        (list start end funcs
+              :annotation-function (lambda (_) " fn")
+              :exclusive 'no))))))
+
+(defun tintin-annotate-command (candidate)
+  "Return annotation for CANDIDATE command."
+  (or (cdr (assoc candidate tintin-command-annotations)) ""))
+
+(defun tintin-collect-variables ()
+  "Collect all variable names defined in current buffer."
+  (let ((vars '()))
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward
+              (rx "#" (or "var" "VAR" "variable" "VARIABLE" "local" "LOCAL")
+                  (one-or-more space)
+                  (or (seq "{" (group (+ (not (any "}")))) "}")
+                      (group (+ (not space)))))
+              nil t)
+        (let ((name (or (match-string 1) (match-string 2))))
+          (when (and name (not (member name vars)))
+            (push name vars)))))
+    (nreverse vars)))
+
+(defun tintin-collect-functions ()
+  "Collect all function names defined in current buffer."
+  (let ((funcs '()))
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward
+              (rx "#" (or "function" "FUNCTION")
+                  (one-or-more space)
+                  (or (seq "{" (group (+ (not (any "}")))) "}")
+                      (group (+ (not space)))))
+              nil t)
+        (let ((name (or (match-string 1) (match-string 2))))
+          (when (and name (not (member name funcs)))
+            (push name funcs)))))
+    (nreverse funcs)))
 
 (defun tintin-outline-level ()
   "Return the outline level for the current line."
