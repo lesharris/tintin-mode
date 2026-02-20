@@ -1,6 +1,6 @@
 ;;; tintin-mode.el --- Major mode for editing TinTin++ config files -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025 Les Harris
+;; Copyright (C) 2026 Les Harris
 
 ;; Author: Les Harris <les@lesharris.com>
 ;; Version: 0.3
@@ -41,15 +41,15 @@
 ;;   }
 ;;
 ;; Features:
-;; - Enhanced indentation that handles empty lines and nested blocks
-;; - Context-aware completion for commands, variables, and functions
-;; - Smart newline handling for brace pairs
 ;; - Syntax highlighting for TinTin++ commands, variables, and functions
+;; - Proper indentation with customizable offset
 ;; - Comment support (#nop commands)
 ;; - Imenu integration for navigation to functions and variables
 ;; - Electric pair insertion for braces and parentheses
 ;; - Outline mode support for code folding
+;; - Command completion for TinTin++ keywords
 ;; - Which-function-mode support
+;; - Eldoc integration for command documentation in the echo area
 
 ;;; Code:
 
@@ -68,7 +68,7 @@
   "Hook run when entering TinTin++ mode.")
 
 (defvar tintin-mode-map
-  (let ((map (make-keymap)))
+  (let ((map (make-sparse-keymap)))
     (define-key map (kbd "RET") 'tintin-newline-and-indent)
     (define-key map "\C-j" 'tintin-newline-and-indent)
     (define-key map "\C-c\C-c" 'comment-region)
@@ -134,7 +134,7 @@
     "case" "cat" "chat" "class" "config" "cr" "cursor"
     "daemon" "debug" "default" "delay" "draw"
     "echo" "edit" "else" "elseif" "end" "event"
-    "foreach" "format" "function"
+    "foreach" "format" "func" "function"
     "gag" "greeting" "grep"
     "help" "highlight" "history"
     "if" "ignore" "info" "introduction"
@@ -158,6 +158,7 @@
     ("alias" . " shortcut")
     ("variable" . " var")
     ("var" . " var")
+    ("func" . " fn")
     ("function" . " fn")
     ("if" . " conditional")
     ("loop" . " loop")
@@ -249,14 +250,14 @@
   "Syntax table for TinTin++ mode.")
 
 (defun tintin-in-string-or-comment-p (&optional pos)
-  "Return non-nil if POS (or point) is inside a string or comment."
+  "Return non-nil if POS (or point) is inside a string or comment.
+Uses font-lock face properties since TinTin++ comments (#nop) cannot
+be expressed through the syntax table."
   (let ((pos (or pos (point))))
     (let ((face (get-text-property pos 'face)))
-      (or (memq face '(font-lock-string-face
-                       font-lock-comment-face
-                       tintin-comment-face))
-          ;; Also check syntax-ppss for comments
-          (nth 4 (syntax-ppss pos))))))
+      (memq face '(font-lock-string-face
+                   font-lock-comment-face
+                   tintin-comment-face)))))
 
 (defun tintin-calculate-indentation ()
   "Calculate the indentation for the current line."
@@ -266,20 +267,25 @@
                      (line-beginning-position)
                      (line-end-position))))
       (cond
+       ;; First line
        ((bobp) 0)
 
        ;; Closing brace - find its matching opening brace
        ((string-match "^[ \t]*}" cur-line)
         (save-excursion
+          ;; Find the } on the current line
           (back-to-indentation)
           (condition-case nil
               (progn
-                (forward-char)
-                (backward-sexp)
+                ;; Go to the matching {
+                (forward-char)  ; Move past the }
+                (backward-sexp) ; Jump to matching {
                 (current-indentation))
             (error 0))))
 
+       ;; Normal line - find previous non-empty line
        (t
+        ;; Skip back over empty lines
         (forward-line -1)
         (while (and (not (bobp))
                     (looking-at "^[ \t]*$"))
@@ -289,6 +295,7 @@
               (line-start (line-beginning-position))
               (line-end (line-end-position))
               (net-braces 0))
+          ;; Count braces on the previous non-empty line
           (goto-char line-start)
           (while (and (< (point) line-end)
                       (re-search-forward "[{}]" line-end t))
@@ -309,11 +316,14 @@
                             (eq (char-after) ?}))))
     (if at-brace-pair
         (progn
+          ;; Insert newline and indent current position
           (insert "\n")
           (indent-according-to-mode)
+          ;; Move to next line (where } is) and indent it
           (save-excursion
             (forward-line 1)
             (indent-according-to-mode)))
+      ;; Normal case
       (insert "\n")
       (indent-according-to-mode))))
 
@@ -329,6 +339,7 @@
       (delete-horizontal-space)
       (indent-to indent-col)
 
+      ;; Restore point position relative to indentation
       (when (> (- (point-max) pos) (point))
         (goto-char (- (point-max) pos))))))
 
@@ -444,6 +455,113 @@ Works with both Company and Corfu through `completion-at-point'."
      ((looking-at "#\\(if\\|loop\\|while\\|foreach\\)") 2)
      (t 3))))
 
+(defvar tintin-command-docs
+  '(("action" . "#action {pattern} {commands} {priority} - Trigger commands on matching output")
+    ("act" . "#act {pattern} {commands} {priority} - Trigger commands on matching output")
+    ("alias" . "#alias {name} {commands} - Create a command shortcut")
+    ("all" . "#all {commands} - Send commands to all sessions")
+    ("bell" . "#bell - Ring the terminal bell")
+    ("break" . "#break - Break out of a loop")
+    ("buffer" . "#buffer {command} - Manipulate the scrollback buffer")
+    ("button" . "#button {square} {commands} {priority} - Create a clickable button")
+    ("case" . "#case {value} {commands} - Match a value in a #switch block")
+    ("cat" . "#cat {variable} {value} - Concatenate a value to a variable")
+    ("chat" . "#chat {command} {args} - Peer-to-peer chat commands")
+    ("class" . "#class {name} {command} - Group triggers/aliases into a class")
+    ("config" . "#config {option} {value} - Set configuration options")
+    ("cr" . "#cr - Send a carriage return")
+    ("cursor" . "#cursor {command} - Input line cursor manipulation")
+    ("daemon" . "#daemon {name} {command} - Run a background session")
+    ("debug" . "#debug {command} {arg} - Toggle debug information")
+    ("default" . "#default {commands} - Default case in a #switch block")
+    ("delay" . "#delay {seconds|name} {commands} - Execute commands after a delay")
+    ("draw" . "#draw {option} {square} {text} - Draw on the screen")
+    ("echo" . "#echo {format} {args} - Display formatted text locally")
+    ("edit" . "#edit {command} - Edit triggers/aliases")
+    ("else" . "#else {commands} - Execute if previous #if was false")
+    ("elseif" . "#elseif {condition} {commands} - Conditional else branch")
+    ("end" . "#end - Terminate TinTin++")
+    ("event" . "#event {type} {commands} - Trigger on system events")
+    ("foreach" . "#foreach {list} {variable} {commands} - Iterate over list items")
+    ("format" . "#format {variable} {format} {args} - Printf-style formatting")
+    ("func" . "#func {name} {commands} - Define a function (returns #result)")
+    ("function" . "#function {name} {commands} - Define a function (returns #result)")
+    ("gag" . "#gag {pattern} - Suppress matching output lines")
+    ("grep" . "#grep {pattern} - Search scrollback buffer")
+    ("help" . "#help {command} - Show help for a command")
+    ("highlight" . "#highlight {pattern} {color} - Colorize matching output")
+    ("history" . "#history {command} - Manipulate command history")
+    ("if" . "#if {condition} {true-commands} - Conditional execution")
+    ("ignore" . "#ignore {command} - Toggle trigger processing")
+    ("info" . "#info {command} - Show system information")
+    ("kill" . "#kill {type} {pattern} - Remove triggers/aliases/etc")
+    ("line" . "#line {option} {commands} - Modify command line behavior")
+    ("list" . "#list {variable} {command} {args} - List manipulation commands")
+    ("local" . "#local {name} {value} - Define a local variable")
+    ("log" . "#log {option} {filename} - Log session output to file")
+    ("loop" . "#loop {start} {end} {variable} {commands} - Numeric for loop")
+    ("macro" . "#macro {key} {commands} - Bind commands to a key sequence")
+    ("map" . "#map {command} {args} - Automapper commands")
+    ("math" . "#math {variable} {expression} - Evaluate math expression")
+    ("message" . "#message {type} {on|off} - Toggle system messages")
+    ("mouse" . "#mouse {event} {commands} - Handle mouse events")
+    ("nop" . "#nop {text} - Comment, ignored by parser")
+    ("parse" . "#parse {string} {variable} {commands} - Iterate over characters")
+    ("path" . "#path {command} - Speedwalk path commands")
+    ("pathdir" . "#pathdir {dir} {reverse} {coord} - Define path directions")
+    ("port" . "#port {command} {args} - Socket/port commands")
+    ("prompt" . "#prompt {pattern} {substitution} - Modify the prompt line")
+    ("read" . "#read {filename} - Read and execute a TinTin++ file")
+    ("regexp" . "#regexp {string} {pattern} {true} {false} - Regular expression match")
+    ("repeat" . "#repeat {count} {commands} - Repeat commands N times")
+    ("replace" . "#replace {variable} {old} {new} - Replace text in a variable")
+    ("return" . "#return {value} - Return a value from a #function")
+    ("save" . "#save {filename} - Save current session to file")
+    ("scan" . "#scan {option} {filename} - Read file as mud output")
+    ("screen" . "#screen {command} {args} - Terminal screen manipulation")
+    ("script" . "#script {variable} {shell command} - Run shell command, capture output")
+    ("send" . "#send {text} - Send text to the mud")
+    ("session" . "#session {name} {host} {port} - Open a mud connection")
+    ("show" . "#show {text} - Display text locally (deprecated, use #showme)")
+    ("showme" . "#showme {text} - Display text locally")
+    ("snoop" . "#snoop {session} - Toggle viewing another session's output")
+    ("split" . "#split {top} {bottom} - Split the screen")
+    ("ssl" . "#ssl {name} {host} {port} - Open an SSL mud connection")
+    ("sub" . "#sub {pattern} {replacement} - Substitute matching output text")
+    ("substitute" . "#substitute {pattern} {replacement} - Substitute matching output text")
+    ("switch" . "#switch {value} {cases} - Multi-way branch")
+    ("system" . "#system {command} - Execute a shell command")
+    ("tab" . "#tab {word} - Add a tab completion word")
+    ("textin" . "#textin {filename} - Send file contents to mud line by line")
+    ("ticker" . "#ticker {name} {commands} {interval} - Repeat commands on interval")
+    ("trigger" . "#trigger {pattern} {commands} {priority} - Synonym for #action")
+    ("ungag" . "#ungag {pattern} - Remove a gag")
+    ("unhighlight" . "#unhighlight {pattern} - Remove a highlight")
+    ("unvar" . "#unvar {name} - Remove a variable")
+    ("unvariable" . "#unvariable {name} - Remove a variable")
+    ("var" . "#var {name} {value} - Define a variable")
+    ("variable" . "#variable {name} {value} - Define a variable")
+    ("while" . "#while {condition} {commands} - Loop while condition is true")
+    ("write" . "#write {filename} - Save session to file")
+    ("zap" . "#zap - Close the current session"))
+  "Documentation strings for TinTin++ commands, shown by eldoc.")
+
+(defun tintin-eldoc-function ()
+  "Return eldoc documentation for TinTin++ command at point."
+  (save-excursion
+    (let ((case-fold-search nil))
+      ;; If we're inside or right after a #command, find it.
+      ;; First, skip back over any alpha chars to find a potential #
+      (skip-chars-backward "a-zA-Z")
+      (when (eq (char-before) ?#)
+        (backward-char))
+      ;; Now check if we're at a #command
+      (when (or (looking-at "#\\([a-zA-Z]+\\)")
+                (re-search-backward "#\\([a-zA-Z]+\\)" (line-beginning-position) t))
+        (let* ((cmd (downcase (match-string-no-properties 1)))
+               (doc (cdr (assoc cmd tintin-command-docs))))
+          doc)))))
+
 (defun tintin-which-function ()
   "Return the name of the function at point."
   (save-excursion
@@ -472,6 +590,7 @@ Works with both Company and Corfu through `completion-at-point'."
 
   ;; Indentation
   (setq-local indent-line-function #'tintin-indent-line)
+  (setq-local indent-tabs-mode nil)
   (setq-local tab-width tintin-indent-offset)
 
   ;; Imenu
@@ -486,6 +605,9 @@ Works with both Company and Corfu through `completion-at-point'."
 
   ;; Which-function-mode support
   (setq-local which-func-functions '(tintin-which-function))
+
+  ;; Eldoc support
+  (setq-local eldoc-documentation-function #'tintin-eldoc-function)
 
   ;; Electric pairs for common TinTin++ constructs
   (when (fboundp 'electric-pair-local-mode)

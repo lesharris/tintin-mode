@@ -9,14 +9,16 @@ TinTin++ is a terminal-based MUD client that uses scripting files with =.tin= an
 ** Features
 
 - *Syntax highlighting* for TinTin++ commands, variables, functions, strings, and comments
+- *Proper indentation* - consistent, rule-based indentation with customizable offset
 - *Theme-aware* - inherits colors from your Emacs theme instead of hardcoded colors
 - *Command completion* - tab completion for TinTin++ commands (type =#ac= + =TAB= ? =#action=)
-- *Smart indentation* - automatic indentation with customizable offset
+- *Smart indentation* - context-aware automatic indentation while typing, respecting the same customizable offset
 - *Code navigation* - Imenu integration for jumping to functions and variables
 - *Code folding* - outline mode support for collapsing sections
 - *Function context* - which-function-mode shows current function in mode line
 - *Electric pairs* - automatic brace and parenthesis pairing
 - *Robust font-lock* - handles complex variable syntax like =*GMCP_PACKAGES[%*]=
+- *Eldoc integration* for command documentation in the echo area
 
 ** Installation
 
